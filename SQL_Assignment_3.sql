@@ -173,6 +173,34 @@ on c.CustomerID = dt.CustomerID
 where c.City != dt.ShipCity
 
 --8
+-- use dense_rank
+with cteProductSoldCount
+as
+(
+	select top 5 p.ProductName, p.ProductID, sum(d.Quantity) as TotalSoldQuantity, 
+	sum((d.UnitPrice - d.Discount)*d.Quantity) as TotalSoldPrice
+	from Products p inner join [Order Details] d
+	on p.ProductID = d.ProductID
+	group by p.ProductName, p.ProductID
+	order by TotalSoldQuantity
+), cteSoldByCity
+as
+(
+	select d.ProductID, o.ShipCity, sum(d.Quantity) as "SoldByCity",
+	DENSE_RANK() over(PARTITION by d.ProductID
+	order by d.ProductID, sum(d.Quantity) desc) as "OrderByCity"
+	from Orders o inner join [Order Details] d
+	on o.OrderID = d.OrderID
+	group by d.ProductID, o.ShipCity
+	--order by d.ProductID, OrderByCity
+)
+select pc.ProductName, (pc.TotalSoldPrice/pc.TotalSoldQuantity) as "AveragePrice",
+sc.ShipCity as "CityOrderedMost"
+from cteProductSoldCount pc left join cteSoldByCity sc
+on pc.ProductID = sc.ProductID
+where sc.OrderByCity <= 1
+
+-- use  row_number
 with cteProductSoldCount
 as
 (
@@ -240,18 +268,46 @@ order by dr1.SoldByCity, dr2.TotalOrders
 
 -- to find the duplicated row, the code could be like below, and if any row has the row
 --number greater than 1 then it is duplicate row
+
+--use dense_rank
 with cte
 as
 (
-	select FirstName, LastName, Country,
+	select ID, FirstName, LastName, Country,
+	DENSE_RANK() over (partition by FirstName, LastName, Country order by ID) 
+	as "DuplicateCount"
+	from Employees
+)
+select ID, FirstName, LastName, Country, DuplicateCount
+from cte
+
+--use row_number
+with cte
+as
+(
+	select ID, FirstName, LastName, Country,
 	ROW_NUMBER() over (partition by FirstName, LastName, Country order by ID) 
 	as "DuplicateCount"
 	from Employees
 )
-select ID, FirstName, LastName, Country
+select ID, FirstName, LastName, Country, DuplicateCount
 from Employees
 
 --the following code could be used to remove duplicate rows
+
+--use dense_rank
+with cte
+as
+(
+	select FirstName, LastName, Country,
+	DENSE_RANK() over (partition by FirstName, LastName, Country order by ID) 
+	as "DuplicateCount"
+	from Employees
+)
+delete from cte
+where DuplicateCount > 1
+
+--use row_number
 with cte
 as
 (
